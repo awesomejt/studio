@@ -1,0 +1,21 @@
+[submodule "studio-cli"]
+	path = studio-cli
+	url = git@github.com:awesomejt/studio-cli.git
+[submodule "studio-courses"]
+	path = studio-courses
+	url = git@github.com:awesomejt/studio-courses.git
+[submodule "studio-deploy"]
+	path = studio-deploy
+	url = git@github.com:awesomejt/studio-deploy.git
+[submodule "studio-playlists"]
+	path = studio-playlists
+	url = git@github.com:awesomejt/studio-playlists.git
+[submodule "studio-shared"]
+	path = studio-shared
+	url = git@github.com:awesomejt/studio-shared.git
+[submodule "studio-videos"]
+	path = studio-videos
+	url = git@github.com:awesomejt/studio-videos.git
+[submodule "studio-web"]
+	path = studio-web
+	url = git@github.com:awesomejt/studio-web.git
