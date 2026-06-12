@@ -1,0 +1,118 @@
+# Umbrella compose — runs the full Creator Studio stack locally.
+#
+# Usage:
+#   docker compose up --build          # build + start everything
+#   docker compose up --build courses  # rebuild one service
+#   docker compose logs -f playlists   # tail a service
+#   docker compose down -v             # stop + delete volumes (fresh DB)
+#
+# Ports:
+#   5001 — studio-courses API  (also available via web: /api/courses/)
+#   5002 — studio-playlists API  (also available via web: /api/playlists/)
+#   5003 — studio-videos API  (also available via web: /api/videos/)
+#   5173 — studio-web (nginx static + API proxy)
+#   5432 — PostgreSQL (single instance, three databases)
+#
+# Each API runs alembic upgrade head on startup, so a fresh `up` always
+# produces a migrated schema. Safe to re-run (migrations are idempotent).
+#
+# Todoist integration is opt-in: add a .env file at the repo root with:
+#   TODOIST_API_TOKEN=your_token
+#   TODOIST_SYNC_ENV=dev
+
+services:
+
+  # ── Database ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: studio
+      POSTGRES_DB: studio_courses        # primary db; init-db.sql adds the other two
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio -d studio_courses"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── APIs ────────────────────────────────────────────────────────────────────
+  courses:
+    build:
+      context: .
+      dockerfile: studio-courses/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://studio:studio@postgres:5432/studio_courses
+      SERVICE_NAME: studio-courses
+      TODOIST_API_TOKEN: ${TODOIST_API_TOKEN:-}
+      TODOIST_SYNC_ENV: ${TODOIST_SYNC_ENV:-dev}
+    command: >
+      sh -c "uv run alembic upgrade head &&
+             uv run --no-sync gunicorn -b 0.0.0.0:5001 'app:create_app()'"
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  playlists:
+    build:
+      context: .
+      dockerfile: studio-playlists/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://studio:studio@postgres:5432/studio_playlists
+      SERVICE_NAME: studio-playlists
+      VIDEOS_API_URL: http://videos:5003
+      TODOIST_API_TOKEN: ${TODOIST_API_TOKEN:-}
+      TODOIST_SYNC_ENV: ${TODOIST_SYNC_ENV:-dev}
+    command: >
+      sh -c "uv run alembic upgrade head &&
+             uv run --no-sync gunicorn -b 0.0.0.0:5002 'app:create_app()'"
+    ports:
+      - "5002:5002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      videos:
+        condition: service_started
+
+  videos:
+    build:
+      context: .
+      dockerfile: studio-videos/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://studio:studio@postgres:5432/studio_videos
+      SERVICE_NAME: studio-videos
+      FLASK_APP: app
+      TODOIST_API_TOKEN: ${TODOIST_API_TOKEN:-}
+      TODOIST_SYNC_ENV: ${TODOIST_SYNC_ENV:-dev}
+    command: >
+      sh -c "uv run alembic upgrade head &&
+             uv run flask run --host 0.0.0.0 --port 5003"
+    ports:
+      - "5003:5003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Web console ─────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: studio-web/Dockerfile
+    volumes:
+      # Override the production nginx config with one that proxies to local services
+      - ./compose-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "5173:80"
+    depends_on:
+      - courses
+      - playlists
+      - videos
+
+volumes:
+  pgdata:
