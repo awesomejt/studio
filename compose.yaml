@@ -87,12 +87,11 @@ services:
     environment:
       DATABASE_URL: postgresql://studio:studio@postgres:5432/studio_videos
       SERVICE_NAME: studio-videos
-      FLASK_APP: app
       TODOIST_API_TOKEN: ${TODOIST_API_TOKEN:-}
       TODOIST_SYNC_ENV: ${TODOIST_SYNC_ENV:-dev}
     command: >
       sh -c "uv run alembic upgrade head &&
-             uv run flask run --host 0.0.0.0 --port 5003"
+             uv run --no-sync gunicorn -b 0.0.0.0:5003 'app:create_app()'"
     ports:
       - "5003:5003"
     depends_on:
